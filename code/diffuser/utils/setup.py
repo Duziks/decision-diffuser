@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 from tap import Tap
-import pdb
+from ml_logger import logger
 
 from .serialization import mkdir
 from .git_utils import (
@@ -12,11 +12,28 @@ from .git_utils import (
     save_git_diff,
 )
 
-def set_seed(seed):
+def set_seed(params):
+    device = params['device']
+    seed = params['seed']
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    if "cuda" in device:
+        logger.print(f"set cuda random seed: {seed}")
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # 为所有 GPU 设置种子
+    elif "npu" in device:
+        import torch_npu
+        logger.print(f"set npu random seed: {seed}")
+        torch.npu.manual_seed(seed)
+        torch.npu.manual_seed_all(seed)
+        torch_npu.npu.manual_seed(seed)
+        torch_npu.npu.manual_seed_all(seed)
+    else:
+        logger.print(f"cant set seed, device: {device}")
+    
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
 def watch(args_to_watch):
     def _fn(args):
@@ -43,7 +60,7 @@ class Parser(Tap):
 
     def save(self):
         fullpath = os.path.join(self.savepath, 'args.json')
-        print(f'[ utils/setup ] Saved args to {fullpath}')
+        logger.print(f'[ utils/setup ] Saved args to {fullpath}')
         super().save(fullpath, skip_unpicklable=True)
 
     def parse_args(self, experiment=None):
@@ -65,16 +82,18 @@ class Parser(Tap):
             Load parameters from config file
         '''
         dataset = args.dataset.replace('-', '_')
-        print(f'[ utils/setup ] Reading config: {args.config}:{dataset}')
+        logger.print(f'[ utils/setup ] Reading config: {args.config}:{dataset}')
         module = importlib.import_module(args.config)
         params = getattr(module, 'base')[experiment]
 
         if hasattr(module, dataset) and experiment in getattr(module, dataset):
-            print(f'[ utils/setup ] Using overrides | config: {args.config} | dataset: {dataset}')
+            logger.print(
+                f'[ utils/setup ] Using overrides | config: {args.config} | dataset: {dataset}')
             overrides = getattr(module, dataset)[experiment]
             params.update(overrides)
         else:
-            print(f'[ utils/setup ] Not using overrides | config: {args.config} | dataset: {dataset}')
+            logger.print(
+                f'[ utils/setup ] Not using overrides | config: {args.config} | dataset: {dataset}')
 
         self._dict = {}
         for key, val in params.items():
@@ -91,15 +110,13 @@ class Parser(Tap):
         if not len(extras):
             return
 
-        print(f'[ utils/setup ] Found extras: {extras}')
-        assert len(extras) % 2 == 0, f'Found odd number ({len(extras)}) of extras: {extras}'
+        logger.print(f'[ utils/setup ] Found extras: {extras}')
         for i in range(0, len(extras), 2):
             key = extras[i].replace('--', '')
             val = extras[i+1]
-            assert hasattr(args, key), f'[ utils/setup ] {key} not found in config: {args.config}'
             old_val = getattr(args, key)
             old_type = type(old_val)
-            print(f'[ utils/setup ] Overriding config | {key} : {old_val} --> {val}')
+            logger.print(f'[ utils/setup ] Overriding config | {key} : {old_val} --> {val}')
             if val == 'None':
                 val = None
             elif val == 'latest':
@@ -108,7 +125,7 @@ class Parser(Tap):
                 try:
                     val = eval(val)
                 except:
-                    print(f'[ utils/setup ] Warning: could not parse {val} (old: {old_val}, {old_type}), using str')
+                    logger.print(f'[ utils/setup ] Warning: could not parse {val} (old: {old_val}, {old_type}), using str')
             else:
                 val = old_type(val)
             setattr(args, key, val)
@@ -119,14 +136,14 @@ class Parser(Tap):
             if type(old) is str and old[:2] == 'f:':
                 val = old.replace('{', '{args.').replace('f:', '')
                 new = lazy_fstring(val, args)
-                print(f'[ utils/setup ] Lazy fstring | {key} : {old} --> {new}')
+                logger.print(f'[ utils/setup ] Lazy fstring | {key} : {old} --> {new}')
                 setattr(self, key, new)
                 self._dict[key] = new
 
     def set_seed(self, args):
         if not 'seed' in dir(args):
             return
-        print(f'[ utils/setup ] Setting seed: {args.seed}')
+        logger.print(f'[ utils/setup ] Setting seed: {args.seed}')
         set_seed(args.seed)
 
     def generate_exp_name(self, args):
@@ -135,7 +152,7 @@ class Parser(Tap):
         exp_name = getattr(args, 'exp_name')
         if callable(exp_name):
             exp_name_string = exp_name(args)
-            print(f'[ utils/setup ] Setting exp_name to: {exp_name_string}')
+            logger.print(f'[ utils/setup ] Setting exp_name to: {exp_name_string}')
             setattr(args, 'exp_name', exp_name_string)
             self._dict['exp_name'] = exp_name_string
 
@@ -146,7 +163,7 @@ class Parser(Tap):
             if 'suffix' in dir(args):
                 args.savepath = os.path.join(args.savepath, args.suffix)
             if mkdir(args.savepath):
-                print(f'[ utils/setup ] Made savepath: {args.savepath}')
+                logger.print(f'[ utils/setup ] Made savepath: {args.savepath}')
             self.save()
 
     def get_commit(self, args):
@@ -156,4 +173,5 @@ class Parser(Tap):
         try:
             save_git_diff(os.path.join(args.savepath, 'diff.txt'))
         except:
-            print('[ utils/setup ] WARNING: did not save git diff')
+            logger.print('[ utils/setup ] WARNING: did not save git diff')
+            

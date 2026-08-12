@@ -1,16 +1,27 @@
+# Copyright 2025. Huawei Technologies Co.,Ltd. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 import diffuser.utils as utils
 import torch
+from ml_logger import logger, RUN
+from config.locomotion_config import Config
 
 def main(**deps):
-    from ml_logger import logger, RUN
-    from config.locomotion_config import Config
-
+    
     RUN._update(deps)
     Config._update(deps)
 
-    # logger.remove('*.pkl')
-    # logger.remove("traceback.err")
-    logger.log_params(Config=vars(Config), RUN=vars(RUN))
     logger.log_text("""
                     charts:
                     - yKey: loss
@@ -20,14 +31,14 @@ def main(**deps):
                     """, filename=".charts.yml", dedent=True, overwrite=True)
 
     torch.backends.cudnn.benchmark = True
-    utils.set_seed(Config.seed)
+    utils.set_seed(deps)
     # -----------------------------------------------------------------------------#
     # ---------------------------------- dataset ----------------------------------#
     # -----------------------------------------------------------------------------#
 
     dataset_config = utils.Config(
         Config.loader,
-        savepath='dataset_config.pkl',
+        savepath='tmp/dataset_config.pkl',
         env=Config.dataset,
         horizon=Config.horizon,
         normalizer=Config.normalizer,
@@ -42,7 +53,7 @@ def main(**deps):
 
     render_config = utils.Config(
         Config.renderer,
-        savepath='render_config.pkl',
+        savepath='tmp/render_config.pkl',
         env=Config.dataset,
     )
 
@@ -57,7 +68,7 @@ def main(**deps):
     if Config.diffusion == 'models.GaussianInvDynDiffusion':
         model_config = utils.Config(
             Config.model,
-            savepath='model_config.pkl',
+            savepath='tmp/model_config.pkl',
             horizon=Config.horizon,
             transition_dim=observation_dim,
             cond_dim=observation_dim,
@@ -71,7 +82,7 @@ def main(**deps):
 
         diffusion_config = utils.Config(
             Config.diffusion,
-            savepath='diffusion_config.pkl',
+            savepath='tmp/diffusion_config.pkl',
             horizon=Config.horizon,
             observation_dim=observation_dim,
             action_dim=action_dim,
@@ -93,7 +104,7 @@ def main(**deps):
     else:
         model_config = utils.Config(
             Config.model,
-            savepath='model_config.pkl',
+            savepath='tmp/model_config.pkl',
             horizon=Config.horizon,
             transition_dim=observation_dim + action_dim,
             cond_dim=observation_dim,
@@ -107,7 +118,7 @@ def main(**deps):
 
         diffusion_config = utils.Config(
             Config.diffusion,
-            savepath='diffusion_config.pkl',
+            savepath='tmp/diffusion_config.pkl',
             horizon=Config.horizon,
             observation_dim=observation_dim,
             action_dim=action_dim,
@@ -126,7 +137,7 @@ def main(**deps):
 
     trainer_config = utils.Config(
         utils.Trainer,
-        savepath='trainer_config.pkl',
+        savepath='tmp/trainer_config.pkl',
         train_batch_size=Config.batch_size,
         train_lr=Config.learning_rate,
         gradient_accumulate_every=Config.gradient_accumulate_every,
@@ -173,4 +184,3 @@ def main(**deps):
     for i in range(n_epochs):
         logger.print(f'Epoch {i} / {n_epochs} | {logger.prefix}')
         trainer.train(n_train_steps=Config.n_steps_per_epoch)
-
