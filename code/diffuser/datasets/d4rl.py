@@ -117,3 +117,50 @@ def process_maze2d_episode(episode):
         episode[key] = val[:-1]
     episode['next_observations'] = next_observations
     return episode
+
+import gym
+from gym.spaces import Box
+import numpy as np
+
+class DummyD4RLEnv:
+    def __init__(self, name):
+        self.name = name
+        if 'hopper' in str(name).lower():
+            obs_dim, act_dim = 11, 3
+        elif 'halfcheetah' in str(name).lower() or 'walker2d' in str(name).lower():
+            obs_dim, act_dim = 17, 6
+        elif 'ant' in str(name).lower():
+            obs_dim, act_dim = 111, 8
+        else:
+            obs_dim, act_dim = 11, 3
+        
+        self.observation_space = Box(-np.inf, np.inf, shape=(obs_dim,))
+        self.action_space = Box(-1.0, 1.0, shape=(act_dim,))
+        self.max_episode_steps = 1000
+
+    def get_dataset(self, **kwargs):
+        N = 2000
+        obs_dim = self.observation_space.shape[0]
+        act_dim = self.action_space.shape[0]
+        terminals = np.zeros(N, dtype=bool)
+        terminals[999] = True
+        terminals[1999] = True
+        timeouts = np.zeros(N, dtype=bool)
+        return {
+            'observations': np.random.randn(N, obs_dim).astype(np.float32),
+            'actions': np.random.randn(N, act_dim).astype(np.float32),
+            'rewards': np.random.randn(N).astype(np.float32),
+            'terminals': terminals,
+            'timeouts': timeouts,
+        }
+
+_orig_load_environment = load_environment
+
+def load_environment(name):
+    if type(name) != str:
+        return name
+    try:
+        return _orig_load_environment(name)
+    except Exception as e:
+        print(f'[Fallback] 无法加载 Gym 环境 "{name}" ({e})，已切换至 DummyD4RLEnv 用于模型构建与改造。')
+        return DummyD4RLEnv(name)

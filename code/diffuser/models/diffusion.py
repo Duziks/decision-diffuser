@@ -123,8 +123,8 @@ class GaussianDiffusion(nn.Module):
 
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
-            epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
-            epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
+            epsilon_cond = self.model(x, cond, t, returns=returns, use_dropout=False)
+            epsilon_uncond = self.model(x, cond, t, returns=returns, force_dropout=True)
             epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
         else:
             epsilon = self.model(x, cond, t)
@@ -395,8 +395,8 @@ class GaussianInvDynDiffusion(nn.Module):
     def p_mean_variance(self, x, cond, t, returns=None):
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
-            epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
-            epsilon_uncond = self.model(x, cond, t, returns, use_dropout=False ,force_dropout=True)
+            epsilon_cond = self.model(x, cond, t, returns=returns, use_dropout=False)
+            epsilon_uncond = self.model(x, cond, t, returns=returns, use_dropout=False ,force_dropout=True)
             epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
         else:
             epsilon = self.model(x, cond, t)
@@ -435,7 +435,7 @@ class GaussianInvDynDiffusion(nn.Module):
         progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
-            x = self.p_sample(cond, timesteps, x, noise, returns)
+            x = self.p_sample(cond, timesteps, x=x, noise=noise, returns=returns)
             x = apply_conditioning(x, cond, 0)
 
             progress.update({'t': i})
@@ -459,7 +459,7 @@ class GaussianInvDynDiffusion(nn.Module):
         horizon = horizon or self.horizon
         shape = (batch_size, horizon, self.observation_dim)
 
-        return self.p_sample_loop(shape, cond, x, noise, returns, *args, **kwargs)
+        return self.p_sample_loop(shape, cond, x=x, noise=noise, returns=returns, *args, **kwargs)
     #------------------------------------------ training ------------------------------------------#
 
     def q_sample(self, x_start, t, noise=None):
@@ -688,8 +688,8 @@ class ActionGaussianDiffusion(nn.Module):
 
         if self.returns_condition:
             # epsilon could be epsilon or x0 itself
-            epsilon_cond = self.model(x, cond, t, returns, use_dropout=False)
-            epsilon_uncond = self.model(x, cond, t, returns, force_dropout=True)
+            epsilon_cond = self.model(x, cond, t, returns=returns, use_dropout=False)
+            epsilon_uncond = self.model(x, cond, t, returns=returns, force_dropout=True)
             epsilon = epsilon_uncond + self.condition_guidance_w*(epsilon_cond - epsilon_uncond)
         else:
             epsilon = self.model(x, cond, t)

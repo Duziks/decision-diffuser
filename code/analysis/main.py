@@ -12,6 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import sys
+from unittest.mock import MagicMock
+import diffuser.utils
+diffuser.utils.MuJoCoRenderer = MagicMock
+
+import sys
+from unittest.mock import MagicMock
+for module in ['mujoco_py', 'mujoco_py.builder', 'mujoco_py.cymj', 'd4rl.locomotion', 'd4rl.locomotion.ant']:
+    sys.modules[module] = MagicMock()
+
+import sys, params_proto
+sys.modules["params_proto.neo_proto"] = params_proto
+
 from ml_logger import logger
 from scripts.evaluate_inv_parallel import evaluate
 from scripts.train import main

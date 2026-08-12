@@ -81,4 +81,23 @@ def get_opt_argument(parser):
         "--profiling_level",
         type=int, help='profiling的level等级，默认为0', default=0
     )
+    parser.add_argument(
+        "--dynamic",
+        type=str,
+        default="false",
+        choices=["true", "false"],
+        help="是否启用动态shape模式（动态编译，跳过图捕获）",
+    )
+    parser.add_argument(
+        "--dynamic_bs_list",
+        type=str,
+        default="",
+        help="动态batch_size分档列表，逗号分隔，如 '1,4,8,16'。为空则单档用test_batch_size",
+    )
+    parser.add_argument(
+        "--dynamic_rounds",
+        type=int,
+        default=3,
+        help="每个batch档位重复测试轮数",
+    )
     return parser

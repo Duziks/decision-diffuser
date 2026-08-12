@@ -207,7 +207,7 @@ class TemporalUnet(nn.Module):
 
         t = self.time_mlp(time)
 
-        if self.returns_condition:
+        if self.returns_condition and returns is not None:
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -254,7 +254,7 @@ class TemporalUnet(nn.Module):
 
         t = self.time_mlp(time)
 
-        if self.returns_condition:
+        if self.returns_condition and returns is not None:
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -350,7 +350,7 @@ class MLPnet(nn.Module):
         '''
         t = self.time_mlp(time)
 
-        if self.returns_condition:
+        if self.returns_condition and returns is not None:
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -431,4 +431,3 @@ class TemporalValue(nn.Module):
         x = x.view(len(x), -1)
         out = self.final_block(torch.cat([x, t], dim=-1))
         return out
-    

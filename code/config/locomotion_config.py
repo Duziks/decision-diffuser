@@ -11,7 +11,7 @@ class Config(ParamsProto):
     compile = False
     graph = False
     hf32 = False
-    
+
     ## model
     model = 'models.TemporalUnet'
     diffusion = 'models.GaussianInvDynDiffusion'
@@ -41,6 +41,7 @@ class Config(ParamsProto):
     max_path_length = 1000
     hidden_dim = 256
     ar_inv = False
+    archive = None
     train_only_inv = False
     termination_penalty = -100
     returns_scale = 400.0 # Determined using rewards from the dataset
@@ -60,3 +61,8 @@ class Config(ParamsProto):
     save_parallel = False
     n_reference = 8
     save_checkpoints = False
+    n_saves = 5
+    save_parallel = False
+    n_reference = 8
+    save_checkpoints = False
+    label_freq = 2000

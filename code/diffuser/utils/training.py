@@ -312,6 +312,7 @@ class Trainer(object):
         self.compile = params["compile"] == "true"
         self.graph = params["graph"] == "true"
         self.hf32 = params["hf32"] == "true"
+        self.dynamic = params.get("dynamic", "false") == "true"
         self.graphs = {}
         self.manual_graph = False
 
@@ -376,6 +377,14 @@ class Trainer(object):
             "x": apply_conditioning(x, conditions, 0),
             "noise": 0.5 * torch.randn_like(x)
         }
+        try:
+            torch._dynamo.mark_dynamic(inputs["x"], 0)
+            if "noise" in inputs and isinstance(inputs["noise"], torch.Tensor):
+                torch._dynamo.mark_dynamic(inputs["noise"], 0)
+            if "returns" in inputs and isinstance(inputs["returns"], torch.Tensor):
+                torch._dynamo.mark_dynamic(inputs["returns"], 0)
+        except Exception:
+            pass
         return inputs
 
     def forward(self, inputs):
@@ -392,7 +401,8 @@ class Trainer(object):
 
     def model_infer(self, inputs):
         if self.manual_graph:
-            return self.model_infer_graph(inputs, self.batch_size)
+            batch_size = inputs["x"].shape[0]
+            return self.model_infer_graph(inputs, batch_size)
         return self.forward(inputs)
 
     def model_infer_graph(self, inputs, batch_size):
@@ -424,11 +434,39 @@ class Trainer(object):
 
                 with torch.cuda.graph(new_batch["graph"]):
                     new_batch["static_output"] = self.forward(new_batch["static_input"])
+            new_batch = {
+                "graph": (
+                    torch.npu.NPUGraph() if "npu" in self.device else torch.cuda.CUDAGraph()
+                ),
+                "stream": (
+                    torch.npu.Stream(self.device) if "npu" in self.device else None
+                ),
+                "static_input": None,
+                "static_output": None,
+            }
+            new_batch["static_input"] = {k: copy.deepcopy(v) for k, v in inputs.items()}
+            if "npu" in self.device:
+                with torch.npu.graph(new_batch["graph"], None, new_batch["stream"]):
+                    new_batch["static_output"] = self.forward(new_batch["static_input"])
+            else:
+                for _ in range(3):
+                    with torch.no_grad():
+                        _ = self.forward(new_batch["static_input"])
+                self.synchronize()
+                with torch.cuda.graph(new_batch["graph"]):
+                    new_batch["static_output"] = self.forward(new_batch["static_input"])
             self.graphs[batch_size] = new_batch
         else:
+            entry = self.graphs[batch_size]
             for k in inputs.keys():
-                self.graphs[batch_size]["static_input"][k] = inputs[k]
-                
+                cached = entry["static_input"][k]
+                if cached.shape != inputs[k].shape:
+                    raise RuntimeError(
+                        f"model_infer_graph: input '{k}' shape mismatch. "
+                        f"cached={tuple(cached.shape)} vs input={tuple(inputs[k].shape)}. "
+                        f"CUDAGraph 不支持动态 shape，请用 --dynamic=true 走动态编译模式。"
+                    )
+                entry["static_input"][k] = inputs[k] 
 
         self.graphs[batch_size]["graph"].replay()
         self.synchronize()
@@ -436,25 +474,28 @@ class Trainer(object):
         return self.graphs[batch_size]["static_output"]
 
     def set_compile_model(self):
+        
+        dyn = self.dynamic
+        
         if self.compile:
             if self.graph and self.shape_handle and "npu" in self.device:
-                self.shape_options["triton.cudagraphs"] = True
+                self.shape_options["triton.cudagraphs"] = not dyn
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, options=self.shape_options
+                    self.forward, backend="inductor", dynamic=dyn, options=self.shape_options
                 )
             elif self.shape_handle and "npu" in self.device:
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, options=self.shape_options
+                    self.forward, backend="inductor", dynamic=dyn, options=self.shape_options
                 )
             elif self.graph:
+                mode = None if dyn else "reduce-overhead"
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, mode="reduce-overhead"
+                    self.forward, backend="inductor", dynamic=dyn, mode=mode
                 )
             else:
-                self.forward = torch.compile(self.forward, backend="inductor", dynamic=False)
+                self.forward = torch.compile(self.forward, backend="inductor", dynamic=dyn)
         else:
             self.forward = self.forward
-            if self.graph and ("npu" in self.device or "cuda" in self.device):
+            if self.graph and not dyn and ("npu" in self.device or "cuda" in self.device):
                 self.manual_graph = True
                 self.graph_prepared = False
-                
