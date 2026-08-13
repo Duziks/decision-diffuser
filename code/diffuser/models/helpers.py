@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import einops
 from einops.layers.torch import Rearrange
-import pdb
 
 import diffuser.utils as utils
 
@@ -187,4 +186,4 @@ Losses = {
     'state_l2': WeightedStateL2,
     'value_l1': ValueL1,
     'value_l2': ValueL2,
-}
+}

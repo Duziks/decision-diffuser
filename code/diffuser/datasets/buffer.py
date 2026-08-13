@@ -1,4 +1,5 @@
 import numpy as np
+from ml_logger import logger
 
 def atleast_2d(x):
     while x.ndim < 2:
@@ -9,7 +10,7 @@ class ReplayBuffer:
 
     def __init__(self, max_n_episodes, max_path_length, termination_penalty):
         self._dict = {
-            'path_lengths': np.zeros(max_n_episodes, dtype=np.int),
+            'path_lengths': np.zeros(max_n_episodes, dtype=int),
         }
         self._count = 0
         self.max_n_episodes = max_n_episodes
@@ -55,15 +56,12 @@ class ReplayBuffer:
                 if k != 'path_lengths'}.items()
 
     def _allocate(self, key, array):
-        assert key not in self._dict
         dim = array.shape[-1]
         shape = (self.max_n_episodes, self.max_path_length, dim)
         self._dict[key] = np.zeros(shape, dtype=np.float32)
-        # print(f'[ utils/mujoco ] Allocated {key} with size {shape}')
 
     def add_path(self, path):
         path_length = len(path['observations'])
-        assert path_length <= self.max_path_length
 
         if path['terminals'].any():
             assert (path['terminals'][-1] == True) and (not path['terminals'][:-1].any())
@@ -98,4 +96,4 @@ class ReplayBuffer:
         for key in self.keys + ['path_lengths']:
             self._dict[key] = self._dict[key][:self._count]
         self._add_attributes()
-        print(f'[ datasets/buffer ] Finalized replay buffer | {self._count} episodes')
+        logger.print(f'[ datasets/buffer ] Finalized replay buffer | {self._count} episodes')

@@ -6,9 +6,12 @@ class Config(ParamsProto):
     # misc
     seed = 100
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    bucket = '/home/aajay/weights/'
+    bucket = 'weights/'
     dataset = 'hopper-medium-expert-v2'
-
+    compile = False
+    graph = False
+    hf32 = False
+    
     ## model
     model = 'models.TemporalUnet'
     diffusion = 'models.GaussianInvDynDiffusion'

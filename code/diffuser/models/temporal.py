@@ -3,8 +3,8 @@ import torch.nn as nn
 import einops
 from einops.layers.torch import Rearrange
 from einops import rearrange
-import pdb
 from torch.distributions import Bernoulli
+from ml_logger import logger
 
 from .helpers import (
     SinusoidalPosEmb,
@@ -122,7 +122,7 @@ class TemporalUnet(nn.Module):
 
         dims = [transition_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
-        print(f'[ models/temporal ] Channel dimensions: {in_out}')
+        logger.print(f'[ models/temporal ] Channel dimensions: {in_out}')
 
         if calc_energy:
             mish = False
@@ -162,7 +162,6 @@ class TemporalUnet(nn.Module):
         self.ups = nn.ModuleList([])
         num_resolutions = len(in_out)
 
-        print(in_out)
         for ind, (dim_in, dim_out) in enumerate(in_out):
             is_last = ind >= (num_resolutions - 1)
 
@@ -209,7 +208,6 @@ class TemporalUnet(nn.Module):
         t = self.time_mlp(time)
 
         if self.returns_condition:
-            assert returns is not None
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -228,8 +226,6 @@ class TemporalUnet(nn.Module):
 
         x = self.mid_block1(x, t)
         x = self.mid_block2(x, t)
-
-        # import pdb; pdb.set_trace()
 
         for resnet, resnet2, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
@@ -259,7 +255,6 @@ class TemporalUnet(nn.Module):
         t = self.time_mlp(time)
 
         if self.returns_condition:
-            assert returns is not None
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -353,11 +348,9 @@ class MLPnet(nn.Module):
             cond: [batch x state]
             returns : [batch x 1]
         '''
-        # Assumes horizon = 1
         t = self.time_mlp(time)
 
         if self.returns_condition:
-            assert returns is not None
             returns_embed = self.returns_mlp(returns)
             if use_dropout:
                 mask = self.mask_dist.sample(sample_shape=(returns_embed.size(0), 1)).to(returns_embed.device)
@@ -403,7 +396,6 @@ class TemporalValue(nn.Module):
 
         self.blocks = nn.ModuleList([])
 
-        print(in_out)
         for dim_in, dim_out in in_out:
 
             self.blocks.append(nn.ModuleList([
@@ -439,3 +431,4 @@ class TemporalValue(nn.Module):
         x = x.view(len(x), -1)
         out = self.final_block(torch.cat([x, t], dim=-1))
         return out
+    
