@@ -2,6 +2,7 @@ import os
 import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
+from .mujoco_compat import get_mujoco_data
 
 class HopperFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self):
@@ -11,9 +12,10 @@ class HopperFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(self)
 
     def step(self, a):
-        posbefore = self.sim.data.qpos[0]
+        data = get_mujoco_data(self)
+        posbefore = data.qpos[0]
         self.do_simulation(a, self.frame_skip)
-        posafter, height, ang = self.sim.data.qpos[0:3]
+        posafter, height, ang = data.qpos[0:3]
         alive_bonus = 1.0
         reward = (posafter - posbefore) / self.dt
         reward += alive_bonus
@@ -25,10 +27,11 @@ class HopperFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, reward, done, {}
 
     def _get_obs(self):
+        data = get_mujoco_data(self)
         return np.concatenate([
             # self.sim.data.qpos.flat[1:],
-            self.sim.data.qpos.flat,
-            np.clip(self.sim.data.qvel.flat, -10, 10)
+            data.qpos.flat,
+            np.clip(data.qvel.flat, -10, 10)
         ])
 
     def reset_model(self):
@@ -44,7 +47,7 @@ class HopperFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         self.viewer.cam.elevation = -20
 
     def set(self, state):
-        qpos_dim = self.sim.data.qpos.size
+        qpos_dim = get_mujoco_data(self).qpos.size
         qpos = state[:qpos_dim]
         qvel = state[qpos_dim:]
         self.set_state(qpos, qvel)

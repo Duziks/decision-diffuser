@@ -171,6 +171,15 @@ def evaluate(**deps):
     trainer.manual_graph = trainer.is_manual_graph()
     trainer.ema_model.eval()
 
+    # The generated-data path follows the common handler's SHAPE_LIST and
+    # dynamic_batch switches.  It is useful for QPS/compile benchmarking and
+    # leaves the original environment evaluation path unchanged by default.
+    dynamic_batch = deps.get("dynamic_batch", "false")
+    dynamic_batch = dynamic_batch is True or dynamic_batch == "true"
+    if dynamic_batch or os.getenv("SHAPE_LIST", ""):
+        trainer.infer_with_generate_data(observation_dim, deps)
+        return
+
     while sum(dones) <  num_eval:
         obs = dataset.normalizer.normalize(obs, 'observations')
         conditions = {0: to_torch(obs, device=Config.device)}
@@ -210,7 +219,7 @@ def evaluate(**deps):
         recorded_obs.append(deepcopy(obs[:, None]))
         t += 1
 
-    output_report(times_range, batch_size)
+    output_report(times_range, batch_size, deps.get("n_diffusion_steps", 10))
 
     recorded_obs = np.concatenate(recorded_obs, axis=1)
     savepath = os.path.join('images', f'sample-executed.png')

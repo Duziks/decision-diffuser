@@ -2,6 +2,7 @@ import os
 import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
+from .mujoco_compat import get_mujoco_data
 
 '''
     qpos : 15
@@ -27,13 +28,14 @@ class AntFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(self)
 
     def step(self, a):
+        data = get_mujoco_data(self)
         xposbefore = self.get_body_com("torso")[0]
         self.do_simulation(a, self.frame_skip)
         xposafter = self.get_body_com("torso")[0]
         forward_reward = (xposafter - xposbefore) / self.dt
         ctrl_cost = 0.5 * np.square(a).sum()
         contact_cost = (
-            0.5 * 1e-3 * np.sum(np.square(np.clip(self.sim.data.cfrc_ext, -1, 1)))
+            0.5 * 1e-3 * np.sum(np.square(np.clip(data.cfrc_ext, -1, 1)))
         )
         survive_reward = 1.0
         reward = forward_reward - ctrl_cost - contact_cost + survive_reward
@@ -54,11 +56,12 @@ class AntFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         )
 
     def _get_obs(self):
+        data = get_mujoco_data(self)
         return np.concatenate(
             [
-                self.sim.data.qpos.flat[2:],
-                self.sim.data.qvel.flat,
-                np.clip(self.sim.data.cfrc_ext, -1, 1).flat,
+                data.qpos.flat[2:],
+                data.qvel.flat,
+                np.clip(data.cfrc_ext, -1, 1).flat,
             ]
         )
 

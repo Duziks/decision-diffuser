@@ -1,5 +1,6 @@
 import os
 import copy
+import time
 import numpy as np
 import torch
 import einops
@@ -11,6 +12,7 @@ from .arrays import batch_to_device, to_np, to_device, apply_dict
 from .timer import Timer
 from ml_logger import logger
 from diffuser.models.helpers import apply_conditioning
+from scripts.common import Profiler, output_report
 
 
 def cycle(dl):
@@ -308,10 +310,27 @@ class Trainer(object):
     #--------------------------------- handle -----------------------------------#
     #-----------------------------------------------------------------------------#
     def set_handle(self, params):
+        def as_bool(value):
+            return value if isinstance(value, bool) or value is None else value == "true"
+
         self.shape_handle = params["shape_handle"] == "true"
         self.compile = params["compile"] == "true"
         self.graph = params["graph"] == "true"
         self.hf32 = params["hf32"] == "true"
+        self.dynamic_batch = as_bool(params.get("dynamic_batch", "false"))
+        self.enable_dynamic_compile = as_bool(params.get("enable_dynamic_compile", False))
+        self.max_seq_len = self.ema_model.horizon
+        self._shape_idx = 0
+        self._shape_list = []
+        shape_list_str = os.getenv("SHAPE_LIST", "")
+        if shape_list_str:
+            for pair in shape_list_str.split(";"):
+                pair = pair.strip()
+                if pair:
+                    bs, seq_len = (int(value.strip()) for value in pair.split(","))
+                    if bs < 1 or seq_len < 2:
+                        raise ValueError("SHAPE_LIST entries must be batch_size >= 1 and seq_len >= 2")
+                    self._shape_list.append((bs, seq_len))
         self.graphs = {}
         self.manual_graph = False
 
@@ -341,6 +360,70 @@ class Trainer(object):
             color = "cyan"
             )
 
+    def _next_shape(self):
+        if self._shape_list:
+            shape = self._shape_list[self._shape_idx % len(self._shape_list)]
+            self._shape_idx += 1
+            return shape
+        if self.dynamic_batch:
+            return np.random.randint(1, self.test_batch_size + 1), self.max_seq_len
+        return self.test_batch_size, self.max_seq_len
+
+    def _mark_dynamic_inputs(self, value, mark_seq_len=True):
+        if isinstance(value, torch.Tensor) and value.ndim >= 1:
+            torch._dynamo.mark_dynamic(value, 0)
+            if mark_seq_len and value.ndim >= 2:
+                torch._dynamo.mark_dynamic(value, 1)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                # ``x`` and ``noise`` carry [batch, horizon, ...]. Conditions
+                # and returns only have a dynamic batch dimension.
+                self._mark_dynamic_inputs(item, mark_seq_len=key in ("x", "noise"))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                self._mark_dynamic_inputs(item, mark_seq_len=mark_seq_len)
+
+    def _log_input_size(self, phase, index, batch_size, seq_len, inputs):
+        self._current_input_size = tuple(inputs["x"].size())
+        logger.print(
+            f"[ utils/training ] [{phase} {index}] "
+            f"batch_size={batch_size}, seq_len={seq_len}, "
+            f"x.size={self._current_input_size}",
+            color="cyan",
+        )
+
+    def _register_compile_callbacks(self):
+        self._compile_count = 0
+        if not hasattr(torch._dynamo, "on_compile_start"):
+            logger.print(
+                "[ utils/training ] Dynamo compile callbacks are unavailable; "
+                "use TORCH_LOGS=recompiles to inspect compilation",
+                color="cyan",
+            )
+            return
+
+        def on_compile_start():
+            self._compile_count += 1
+            logger.print(
+                f"[ utils/training ] [compile {self._compile_count}] start, "
+                f"input_size={getattr(self, '_current_input_size', None)}",
+                color="cyan",
+            )
+
+        def on_compile_end():
+            logger.print(
+                f"[ utils/training ] [compile {self._compile_count}] end, "
+                f"input_size={getattr(self, '_current_input_size', None)}",
+                color="cyan",
+            )
+
+        # Keep references because Dynamo stores these process-wide callbacks.
+        self._compile_start_callback = on_compile_start
+        self._compile_end_callback = on_compile_end
+        torch._dynamo.on_compile_start(self._compile_start_callback)
+        if hasattr(torch._dynamo, "on_compile_end"):
+            torch._dynamo.on_compile_end(self._compile_end_callback)
+
     def set_hf32(self):
         if "npu" in self.device:
             import torch_npu
@@ -366,8 +449,8 @@ class Trainer(object):
     def is_manual_graph(self):
         return not self.compile and self.graph and ("npu" in self.device or "cuda" in self.device)
     
-    def generate_inputs(self, conditions, returns, observation_dim):
-        shape = (len(conditions[0]), self.ema_model.horizon, self.ema_model.observation_dim)
+    def generate_inputs(self, conditions, returns, observation_dim, seq_len=None):
+        shape = (len(conditions[0]), seq_len or self.ema_model.horizon, self.ema_model.observation_dim)
         x = 0.5 * torch.randn(shape, device=self.ema_model.betas.device)
         inputs = {
             "conditions": conditions,
@@ -384,7 +467,13 @@ class Trainer(object):
         observation_dim = inputs["observation_dim"]
         x = inputs["x"]
         noise = inputs["noise"]
-        samples = self.ema_model.conditional_sample(conditions, x=x, noise=noise, returns=returns)
+        samples = self.ema_model.conditional_sample(
+            conditions,
+            x=x,
+            noise=noise,
+            returns=returns,
+            verbose=False,
+        )
         obs_comb = torch.cat([samples[:, 0, :], samples[:, 1, :]], dim=-1)
         obs_comb = obs_comb.reshape(-1, 2 * observation_dim)
         action = self.ema_model.inv_model(obs_comb)
@@ -392,7 +481,9 @@ class Trainer(object):
 
     def model_infer(self, inputs):
         if self.manual_graph:
-            return self.model_infer_graph(inputs, self.batch_size)
+            seq_len = inputs["x"].shape[1] if isinstance(inputs.get("x"), torch.Tensor) and inputs["x"].ndim >= 2 else None
+            graph_key = (self.batch_size, seq_len)
+            return self.model_infer_graph(inputs, graph_key)
         return self.forward(inputs)
 
     def model_infer_graph(self, inputs, batch_size):
@@ -435,23 +526,89 @@ class Trainer(object):
 
         return self.graphs[batch_size]["static_output"]
 
+    def infer_with_generate_data(self, observation_dim, params):
+        """Benchmark generated inputs while cycling through SHAPE_LIST/dynamic batches."""
+        self._shape_idx = 0
+        self.test_batch_size = params["test_batch_size"]
+        warmup = 30
+        iteration = 210
+        times_range = []
+        batches = []
+        self.ema_model.eval()
+        profiler = Profiler(params)
+        dynamic_marked = False
+        with torch.no_grad():
+            for warmup_idx in range(warmup):
+                batch_size, seq_len = self._next_shape()
+                state = torch.randn(batch_size, self.ema_model.observation_dim,
+                                    device=self.ema_model.betas.device)
+                conditions = {0: state}
+                returns = torch.ones(batch_size, 1, device=state.device)
+                inputs = self.generate_inputs(conditions, returns, observation_dim, seq_len)
+                if self.enable_dynamic_compile is None and not dynamic_marked:
+                    self._mark_dynamic_inputs(inputs)
+                    dynamic_marked = True
+                    logger.print(
+                        "[ utils/training ] mark_dynamic: "
+                        "batch_dim=0, seq_len_dim=1, "
+                        f"input_size={tuple(inputs['x'].size())}",
+                        color="cyan",
+                    )
+                self.batch_size = batch_size
+                self._log_input_size(
+                    "warmup", warmup_idx, batch_size, seq_len, inputs
+                )
+                self.model_infer(inputs)
+
+            with profiler.get_profiler() as prof:
+                for it in range(iteration):
+                    batch_size, seq_len = self._next_shape()
+                    state = torch.randn(batch_size, self.ema_model.observation_dim,
+                                        device=self.ema_model.betas.device)
+                    conditions = {0: state}
+                    returns = torch.ones(batch_size, 1, device=state.device)
+                    inputs = self.generate_inputs(conditions, returns, observation_dim, seq_len)
+                    self.batch_size = batch_size
+                    self._log_input_size("iter", it, batch_size, seq_len, inputs)
+                    self.synchronize()
+                    start = time.time()
+                    self.model_infer(inputs)
+                    self.synchronize()
+                    times_range.append(time.time() - start)
+                    batches.append(batch_size)
+                    if hasattr(prof, "step"):
+                        prof.step()
+
+        output_report(
+            times_range,
+            batches,
+            params.get("n_diffusion_steps", 10),
+        )
+
     def set_compile_model(self):
+        dynamic_arg = self.enable_dynamic_compile
+        logger.print(
+            f"[ utils/training ] torch.compile: enabled={self.compile}, "
+            f"dynamic={dynamic_arg}, graph={self.graph}",
+            color="cyan",
+        )
         if self.compile:
+            self._register_compile_callbacks()
             if self.graph and self.shape_handle and "npu" in self.device:
                 self.shape_options["triton.cudagraphs"] = True
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, options=self.shape_options
+                    self.forward, backend="inductor", dynamic=dynamic_arg, options=self.shape_options
                 )
             elif self.shape_handle and "npu" in self.device:
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, options=self.shape_options
+                    self.forward, backend="inductor", dynamic=dynamic_arg, options=self.shape_options
                 )
             elif self.graph:
                 self.forward = torch.compile(
-                    self.forward, backend="inductor", dynamic=False, mode="reduce-overhead"
+                    self.forward, backend="inductor", dynamic=dynamic_arg, mode="reduce-overhead"
                 )
             else:
-                self.forward = torch.compile(self.forward, backend="inductor", dynamic=False)
+                self.forward = torch.compile(self.forward, backend="inductor", dynamic=dynamic_arg)
         else:
             self.forward = self.forward
             if self.graph and ("npu" in self.device or "cuda" in self.device):

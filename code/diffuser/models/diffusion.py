@@ -158,17 +158,19 @@ class GaussianDiffusion(nn.Module):
 
         if return_diffusion: diffusion = [x]
 
-        progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
+        progress = utils.Progress(self.n_timesteps) if verbose else None
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(x, cond, timesteps, returns)
             x = apply_conditioning(x, cond, self.action_dim)
 
-            progress.update({'t': i})
+            if progress is not None:
+                progress.update({'t': i})
 
             if return_diffusion: diffusion.append(x)
 
-        progress.close()
+        if progress is not None:
+            progress.close()
 
         if return_diffusion:
             return x, torch.stack(diffusion, dim=1)
@@ -204,17 +206,19 @@ class GaussianDiffusion(nn.Module):
 
         if return_diffusion: diffusion = [x]
 
-        progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
+        progress = utils.Progress(self.n_timesteps) if verbose else None
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.grad_p_sample(x, cond, timesteps, returns)
             x = apply_conditioning(x, cond, self.action_dim)
 
-            progress.update({'t': i})
+            if progress is not None:
+                progress.update({'t': i})
 
             if return_diffusion: diffusion.append(x)
 
-        progress.close()
+        if progress is not None:
+            progress.close()
 
         if return_diffusion:
             return x, torch.stack(diffusion, dim=1)
@@ -432,17 +436,19 @@ class GaussianInvDynDiffusion(nn.Module):
 
         if return_diffusion: diffusion = [x]
 
-        progress = utils.Progress(self.n_timesteps) if verbose else utils.Silent()
+        progress = utils.Progress(self.n_timesteps) if verbose else None
         for i in reversed(range(0, self.n_timesteps)):
             timesteps = torch.full((batch_size,), i, device=device, dtype=torch.long)
             x = self.p_sample(cond, timesteps, x, noise, returns)
             x = apply_conditioning(x, cond, 0)
 
-            progress.update({'t': i})
+            if progress is not None:
+                progress.update({'t': i})
 
             if return_diffusion: diffusion.append(x)
 
-        progress.close()
+        if progress is not None:
+            progress.close()
 
         if return_diffusion:
             return x, torch.stack(diffusion, dim=1)
