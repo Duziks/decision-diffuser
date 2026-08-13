@@ -2,6 +2,7 @@ import os
 import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
+from .mujoco_compat import get_mujoco_data
 
 class Walker2dFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
 
@@ -12,9 +13,10 @@ class Walker2dFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         utils.EzPickle.__init__(self)
 
     def step(self, a):
-        posbefore = self.sim.data.qpos[0]
+        data = get_mujoco_data(self)
+        posbefore = data.qpos[0]
         self.do_simulation(a, self.frame_skip)
-        posafter, height, ang = self.sim.data.qpos[0:3]
+        posafter, height, ang = data.qpos[0:3]
         alive_bonus = 1.0
         reward = ((posafter - posbefore) / self.dt)
         reward += alive_bonus
@@ -25,8 +27,9 @@ class Walker2dFullObsEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         return ob, reward, done, {}
 
     def _get_obs(self):
-        qpos = self.sim.data.qpos
-        qvel = self.sim.data.qvel
+        data = get_mujoco_data(self)
+        qpos = data.qpos
+        qvel = data.qvel
         return np.concatenate([qpos, qvel]).ravel()
 
     def reset_model(self):
