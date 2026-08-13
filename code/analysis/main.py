@@ -41,4 +41,4 @@ if __name__ == '__main__':
     if kwargs.get("pattern") == 'train':
         main(**kwargs)
     else:
-        evaluate(**kwargs)
+        evaluate(**kwargs)

@@ -457,4 +457,4 @@ class Trainer(object):
             if self.graph and ("npu" in self.device or "cuda" in self.device):
                 self.manual_graph = True
                 self.graph_prepared = False
-                
+                

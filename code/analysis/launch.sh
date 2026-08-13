@@ -37,4 +37,4 @@ python main.py  --device=${DEVICE} \
                 --profiling_level=0 \
                 --bucket=${WEIGHTS_PATH} # 权重路径
 
-echo "finished!"
+echo "finished!"

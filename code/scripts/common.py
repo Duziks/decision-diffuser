@@ -155,4 +155,4 @@ class Profiler:
             profiler = self.get_gpu_profiler(profiling_output_dir)
         else:
             profiler = nullcontext()
-        return profiler
+        return profiler
