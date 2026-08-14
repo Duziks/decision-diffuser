@@ -16,10 +16,10 @@ def import_class(_class):
     module = importlib.import_module(f'{repo_name}.{module_name}')
     ## eg, diffusion.utils.Renderer
     _class = getattr(module, class_name)
-    print(f'[ utils/config ] Imported {repo_name}.{module_name}:{class_name}')
+    logger.print(f'[ utils/config ] Imported {repo_name}.{module_name}:{class_name}')
     return _class
 
-class Config(collections.Mapping):
+class Config(collections.abc.Mapping):
 
     def __init__(self, _class, verbose=True, savepath=None, device=None, **kwargs):
         self._class = import_class(_class)
@@ -30,14 +30,14 @@ class Config(collections.Mapping):
             self._dict[key] = val
 
         if verbose:
-            print(self)
+            logger.print(self)
 
         if savepath is not None:
             logger.save_pkl(self, savepath)
-            print(f'[ utils/config ] Saved config to: {savepath}\n')
+            logger.print(f'[ utils/config ] Saved config to: {savepath}')
 
     def __repr__(self):
-        string = f'\n[utils/config ] Config: {self._class}\n'
+        string = f'[ utils/config ] Config: {self._class}'
         for key in sorted(self._dict.keys()):
             val = self._dict[key]
             string += f'    {key}: {val}\n'
