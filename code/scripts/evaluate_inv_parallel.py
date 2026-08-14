@@ -171,6 +171,12 @@ def evaluate(**deps):
     trainer.manual_graph = trainer.is_manual_graph()
     trainer.ema_model.eval()
 
+    # Only this explicit pair enables generated-input dynamic-shape benchmarking.
+    # The default (empty SHAPE_LIST + False) keeps the original evaluation path.
+    if trainer.dynamic_enabled:
+        trainer.infer_with_generate_data(observation_dim, deps)
+        return
+
     while sum(dones) <  num_eval:
         obs = dataset.normalizer.normalize(obs, 'observations')
         conditions = {0: to_torch(obs, device=Config.device)}
@@ -210,7 +216,7 @@ def evaluate(**deps):
         recorded_obs.append(deepcopy(obs[:, None]))
         t += 1
 
-    output_report(times_range, batch_size)
+    output_report(times_range, batch_size, deps.get("n_diffusion_steps", 10))
 
     recorded_obs = np.concatenate(recorded_obs, axis=1)
     savepath = os.path.join('images', f'sample-executed.png')

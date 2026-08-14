@@ -21,12 +21,12 @@ from ml_logger import logger
 from easydict import EasyDict as edict
 import torch
 
-def output_report(times_range, batch_size):
+def output_report(times_range, batch_size, n_diffusion_steps=10):
     times_range.sort()
     report = { "model_name": "Decision-Diffuser"}
-    tail_latency = round(times_range[int(len(times_range) * 0.99)] * 1000 /10, 6)
-    p90_latency = round(times_range[int(len(times_range) * 0.90)] * 1000 / 10, 6)
-    avg_latency = round(sum(times_range) / len(times_range) * 1000 / 10, 6)
+    tail_latency = round(times_range[int(len(times_range) * 0.99)] * 1000 / n_diffusion_steps, 6)
+    p90_latency = round(times_range[int(len(times_range) * 0.90)] * 1000 / n_diffusion_steps, 6)
+    avg_latency = round(sum(times_range) / len(times_range) * 1000 / n_diffusion_steps, 6)
     qps = calculate_qps(times_range, batch_size)
 
     report["QPS"] = qps

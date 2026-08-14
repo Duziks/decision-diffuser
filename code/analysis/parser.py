@@ -31,6 +31,12 @@ def get_model_argument(parser):
         "--test_batch_size", type=int, default=10, help="test_qps模式下batch_size大小"
     )
     parser.add_argument(
+        "--enable_dynamic_compile",
+        type=lambda v: {"true": True, "false": False, "none": None}[v.lower()],
+        default=False,
+        help="Dynamic compile mode: False (static), True (full dynamic), None (auto detect)",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cpu",

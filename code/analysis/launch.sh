@@ -9,6 +9,7 @@ PATTERN=eval # train/eval
 WEIGHTS_PATH=${PWD}/../weights   #权重保存和加载的路径
 
 n_diffusion_steps=10
+export SHAPE_LIST="" # Shape list: "batch_size,seq_len;batch_size,seq_len;..."
 
 if [ $DEVICE == "npu" ]
 then
@@ -33,6 +34,7 @@ python main.py  --device=${DEVICE} \
                 --hf32=true \
                 --graph=false \
                 --compile=false \
+                --enable_dynamic_compile None \
                 --check_results=false \
                 --profiling_level=0 \
                 --bucket=${WEIGHTS_PATH} # 权重路径
