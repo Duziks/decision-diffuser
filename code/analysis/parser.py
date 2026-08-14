@@ -31,13 +31,6 @@ def get_model_argument(parser):
         "--test_batch_size", type=int, default=10, help="test_qps模式下batch_size大小"
     )
     parser.add_argument(
-        "--dynamic_batch",
-        type=str,
-        default="false",
-        choices=["true", "false"],
-        help="Whether to use a random batch size in [1, test_batch_size]",
-    )
-    parser.add_argument(
         "--enable_dynamic_compile",
         type=lambda v: {"true": True, "false": False, "none": None}[v.lower()],
         default=False,

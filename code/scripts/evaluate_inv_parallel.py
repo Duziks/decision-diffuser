@@ -171,12 +171,9 @@ def evaluate(**deps):
     trainer.manual_graph = trainer.is_manual_graph()
     trainer.ema_model.eval()
 
-    # The generated-data path follows the common handler's SHAPE_LIST and
-    # dynamic_batch switches.  It is useful for QPS/compile benchmarking and
-    # leaves the original environment evaluation path unchanged by default.
-    dynamic_batch = deps.get("dynamic_batch", "false")
-    dynamic_batch = dynamic_batch is True or dynamic_batch == "true"
-    if dynamic_batch or os.getenv("SHAPE_LIST", ""):
+    # Only this explicit pair enables generated-input dynamic-shape benchmarking.
+    # The default (empty SHAPE_LIST + False) keeps the original evaluation path.
+    if trainer.dynamic_enabled:
         trainer.infer_with_generate_data(observation_dim, deps)
         return
 

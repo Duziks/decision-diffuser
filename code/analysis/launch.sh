@@ -2,7 +2,6 @@
 export LD_LIBRARY_PATH=/root/.mujoco/mujoco210/bin:$LD_LIBRARY_PATH
 export PATH=$PATH:/usr/bin/gcc
 export PYTHONPATH=${PWD}/..:$PYTHONPATH
-export PYTHONUNBUFFERED=1
 
 DEVICE_ID=0
 DEVICE= # cpu/npu/cuda
@@ -11,6 +10,7 @@ WEIGHTS_PATH=${PWD}/../weights   #权重保存和加载的路径
 
 n_diffusion_steps=10
 export SHAPE_LIST="" # Shape list: "batch_size,seq_len;batch_size,seq_len;..."
+enable_dynamic_compile=False # False/True/None; use None with a non-empty SHAPE_LIST
 
 if [ $DEVICE == "npu" ]
 then
@@ -35,8 +35,7 @@ python main.py  --device=${DEVICE} \
                 --hf32=true \
                 --graph=false \
                 --compile=false \
-                --dynamic_batch=false \
-                --enable_dynamic_compile False \
+                --enable_dynamic_compile ${enable_dynamic_compile} \
                 --check_results=false \
                 --profiling_level=0 \
                 --bucket=${WEIGHTS_PATH} # 权重路径

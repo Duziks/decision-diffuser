@@ -317,13 +317,12 @@ class Trainer(object):
         self.compile = params["compile"] == "true"
         self.graph = params["graph"] == "true"
         self.hf32 = params["hf32"] == "true"
-        self.dynamic_batch = as_bool(params.get("dynamic_batch", "false"))
         self.enable_dynamic_compile = as_bool(params.get("enable_dynamic_compile", False))
         self.max_seq_len = self.ema_model.horizon
         self._shape_idx = 0
         self._shape_list = []
-        shape_list_str = os.getenv("SHAPE_LIST", "")
-        if shape_list_str:
+        shape_list_str = os.getenv("SHAPE_LIST", "").strip()
+        if self.enable_dynamic_compile is None and shape_list_str:
             for pair in shape_list_str.split(";"):
                 pair = pair.strip()
                 if pair:
@@ -331,6 +330,7 @@ class Trainer(object):
                     if bs < 1 or seq_len < 2:
                         raise ValueError("SHAPE_LIST entries must be batch_size >= 1 and seq_len >= 2")
                     self._shape_list.append((bs, seq_len))
+        self.dynamic_enabled = bool(self._shape_list)
         self.graphs = {}
         self.manual_graph = False
 
@@ -365,8 +365,6 @@ class Trainer(object):
             shape = self._shape_list[self._shape_idx % len(self._shape_list)]
             self._shape_idx += 1
             return shape
-        if self.dynamic_batch:
-            return np.random.randint(1, self.test_batch_size + 1), self.max_seq_len
         return self.test_batch_size, self.max_seq_len
 
     def _mark_dynamic_inputs(self, value, mark_seq_len=True):
@@ -527,7 +525,7 @@ class Trainer(object):
         return self.graphs[batch_size]["static_output"]
 
     def infer_with_generate_data(self, observation_dim, params):
-        """Benchmark generated inputs while cycling through SHAPE_LIST/dynamic batches."""
+        """Benchmark generated inputs while cycling through SHAPE_LIST."""
         self._shape_idx = 0
         self.test_batch_size = params["test_batch_size"]
         warmup = 30
@@ -545,7 +543,7 @@ class Trainer(object):
                 conditions = {0: state}
                 returns = torch.ones(batch_size, 1, device=state.device)
                 inputs = self.generate_inputs(conditions, returns, observation_dim, seq_len)
-                if self.enable_dynamic_compile is None and not dynamic_marked:
+                if self.dynamic_enabled and not dynamic_marked:
                     self._mark_dynamic_inputs(inputs)
                     dynamic_marked = True
                     logger.print(
